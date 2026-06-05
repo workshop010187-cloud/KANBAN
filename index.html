@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>GMP Pumps · Kanban Montaggio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@300;400;500;600&display=swap');
+
+:root {
+  --bk: #111; --bk2: #1c1c1c; --bk3: #252525;
+  --wh: #ffffff; --gr: #777;
+  --red: #e53935; --red-bg: #2a1212; --red-bd: #5c1a1a;
+  --ora: #fb8c00; --ora-bg: #251a08; --ora-bd: #5c3a08;
+  --whi: #aaaaaa; --whi-bg: #1a1a1a; --whi-bd: #333333;
+  --done-bg: #161616; --done-bd: #2a2a2a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bk); color: var(--wh); font-family: 'Barlow', sans-serif; min-height: 100vh; }
+
+.header {
+  background: var(--bk2); border-bottom: 1px solid #2a2a2a;
+  padding: 0 16px; height: 54px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.logo { font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 17px; letter-spacing: 3px; text-transform: uppercase; }
+.logo span { color: var(--red); }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.date-now { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; letter-spacing: 1px; color: #555; text-transform: uppercase; }
+.upload-btn {
+  background: var(--red); color: white; border: none;
+  padding: 7px 14px; font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 12px; letter-spacing: 1px;
+  text-transform: uppercase; cursor: pointer; border-radius: 2px;
+}
+.upload-btn:hover { background: #c62828; }
+#file-input { display: none; }
+
+.stats-bar {
+  background: var(--bk2); border-bottom: 1px solid #222;
+  padding: 7px 16px; display: none; gap: 20px; align-items: center;
+  flex-wrap: wrap;
+}
+.stat { display: flex; align-items: center; gap: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; letter-spacing: 1px; color: #666; text-transform: uppercase; }
+.stat b { font-size: 16px; color: var(--wh); }
+.hint { margin-left: auto; font-size: 10px; color: #333; font-family: 'Barlow Condensed', sans-serif; letter-spacing: 1px; }
+
+/* BOARD */
+.board { display: flex; gap: 10px; padding: 12px; min-height: calc(100vh - 96px); align-items: flex-start; overflow-x: auto; }
+
+.col {
+  background: var(--bk2); border: 1px solid #222; border-radius: 4px;
+  min-width: 300px; flex: 1; display: flex; flex-direction: column;
+}
+.col-header {
+  padding: 12px 14px 10px; border-bottom: 1px solid #222;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.col[data-col="arretrato"] .col-header { border-top: 3px solid var(--red); }
+.col[data-col="oggi"]      .col-header { border-top: 3px solid var(--ora); }
+.col[data-col="prossimi"]  .col-header { border-top: 3px solid #888; }
+.col[data-col="done"]      .col-header { border-top: 3px solid #333; }
+
+.col-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+.col[data-col="arretrato"] .col-title { color: var(--red); }
+.col[data-col="oggi"]      .col-title { color: var(--ora); }
+.col[data-col="prossimi"]  .col-title { color: #888; }
+.col[data-col="done"]      .col-title { color: #444; }
+
+.col-count { font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 20px; }
+.col[data-col="arretrato"] .col-count { color: var(--red); }
+.col[data-col="oggi"]      .col-count { color: var(--ora); }
+.col[data-col="prossimi"]  .col-count { color: #666; }
+.col[data-col="done"]      .col-count { color: #333; }
+
+.col-body {
+  padding: 8px; flex: 1; display: flex; flex-direction: column; gap: 7px;
+  overflow-y: auto; max-height: calc(100vh - 160px);
+  min-height: 60px;
+}
+.col-body::-webkit-scrollbar { width: 3px; }
+.col-body::-webkit-scrollbar-thumb { background: #333; }
+.col-body.drag-over { background: #1e1e1e; border-radius: 0 0 4px 4px; }
+
+/* CARD */
+.card {
+  border-radius: 3px; padding: 13px 14px 12px;
+  cursor: grab; position: relative;
+  transition: transform 0.1s, box-shadow 0.1s;
+  user-select: none;
+}
+.card:active { cursor: grabbing; }
+.card.dragging { opacity: 0.35; }
+
+.card[data-col="arretrato"] { background: var(--red-bg); border: 1px solid var(--red-bd); border-left: 3px solid var(--red); }
+.card[data-col="oggi"]      { background: var(--ora-bg); border: 1px solid var(--ora-bd); border-left: 3px solid var(--ora); }
+.card[data-col="prossimi"]  { background: var(--whi-bg); border: 1px solid var(--whi-bd); border-left: 3px solid #444; }
+.card[data-col="done"]      { background: var(--done-bg); border: 1px solid var(--done-bd); border-left: 3px solid #2a2a2a; opacity: 0.5; }
+
+.card-date {
+  font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+  font-size: 26px; letter-spacing: 1px; line-height: 1;
+  margin-bottom: 4px;
+}
+.card[data-col="arretrato"] .card-date { color: var(--red); }
+.card[data-col="oggi"]      .card-date { color: var(--ora); }
+.card[data-col="prossimi"]  .card-date { color: #888; }
+.card[data-col="done"]      .card-date { color: #333; }
+
+.card-cliente {
+  font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+  font-size: 17px; letter-spacing: 0.5px; color: var(--wh);
+  margin-bottom: 5px; line-height: 1.2;
+}
+.card-ordine { font-size: 12px; color: #555; font-family: 'Barlow Condensed', sans-serif; letter-spacing: 0.5px; margin-bottom: 6px; }
+
+.card-articles { display: flex; flex-direction: column; gap: 5px; }
+.card-art { font-size: 12px; color: #999; line-height: 1.5; padding: 4px 6px; background: rgba(255,255,255,0.03); border-radius: 2px; }
+.card-art strong { color: #e0e0e0; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; display: block; margin-bottom: 1px; }
+.card-more { font-size: 12px; color: var(--ora); margin-top: 6px; cursor: pointer; font-family:'Barlow Condensed',sans-serif; letter-spacing:1px; padding: 4px 0; }
+.card-more:hover { color: var(--wh); }
+
+/* EMPTY */
+.empty-board { grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; gap: 14px; width: 100%; }
+.empty-icon { font-size: 44px; opacity: 0.2; }
+.empty-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 18px; letter-spacing: 3px; text-transform: uppercase; color: #444; }
+.empty-sub { font-size: 12px; color: #333; text-align: center; max-width: 260px; line-height: 1.6; }
+.empty-btn { background: transparent; border: 1px solid #333; color: #555; padding: 9px 18px; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border-radius: 2px; }
+.empty-btn:hover { border-color: var(--red); color: var(--red); }
+
+/* TOAST */
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(60px); background: #222; border: 1px solid #444; color: white; padding: 9px 18px; border-radius: 3px; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; letter-spacing: 1px; transition: transform 0.25s; z-index: 999; white-space: nowrap; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">GMP <span>·</span> Kanban Montaggio</div>
+  <div class="header-right">
+    <div class="date-now" id="date-now"></div>
+    <button class="upload-btn" onclick="document.getElementById('file-input').click()">📂 Carica Excel TSE</button>
+    <input type="file" id="file-input" accept=".xlsx,.xls" onchange="loadExcel(this)">
+  </div>
+</div>
+
+<div class="stats-bar" id="stats-bar">
+  <div class="stat"><span style="color:var(--red)">●</span>&nbsp;<b id="n-arretrato">0</b>&nbsp;Arretrati</div>
+  <div class="stat"><span style="color:var(--ora)">●</span>&nbsp;<b id="n-oggi">0</b>&nbsp;Oggi / Domani</div>
+  <div class="stat"><span style="color:#666">●</span>&nbsp;<b id="n-prossimi">0</b>&nbsp;Prossimi</div>
+  <div class="stat"><span style="color:#333">●</span>&nbsp;<b id="n-done">0</b>&nbsp;Completati</div>
+  <div class="hint">TRASCINA LE SCHEDE PER AGGIORNARE LO STATO</div>
+</div>
+
+<div class="board" id="board">
+  <div class="empty-board">
+    <div class="empty-icon">⚙</div>
+    <div class="empty-title">Nessun file caricato</div>
+    <div class="empty-sub">Carica il file Excel con il foglio "VISTA SEMPLICE MONTAGGI"</div>
+    <button class="empty-btn" onclick="document.getElementById('file-input').click()">Carica file Excel TSE</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let cards = [];
+let dragId = null;
+
+// Today
+const today = new Date();
+today.setHours(0,0,0,0);
+const todayStr = today.toLocaleDateString("it-IT",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+document.getElementById("date-now").textContent = todayStr;
+
+// Parse date dd/mm/yyyy → Date object
+function parseDate(s) {
+  if (!s || typeof s !== "string") return null;
+  s = s.trim();
+  if (s.toLowerCase() === "arretrato") return new Date(2000,0,1); // very old
+  const p = s.split("/");
+  if (p.length === 3) return new Date(+p[2], +p[1]-1, +p[0]);
+  return null;
+}
+
+// Assign column based on date
+function dateToCol(dateStr) {
+  if (!dateStr) return "prossimi";
+  const s = dateStr.trim().toLowerCase();
+  if (s === "arretrato") return "arretrato";
+  const d = parseDate(dateStr);
+  if (!d) return "prossimi";
+  d.setHours(0,0,0,0);
+  const diff = Math.floor((d - today) / 86400000);
+  if (diff < 0)  return "arretrato";
+  if (diff <= 1) return "oggi";
+  return "prossimi";
+}
+
+function loadExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:"array", cellDates:false});
+      const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes("VISTA") && n.toUpperCase().includes("SEMPLICE")) || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+
+      // Find header row
+      let hRow = 0;
+      for (let i = 0; i < Math.min(5, rows.length); i++) {
+        if (rows[i] && rows[i].some(c => String(c).toLowerCase().includes("ragione") || String(c).toLowerCase().includes("consegna"))) {
+          hRow = i; break;
+        }
+      }
+
+      // Group by cliente + data
+      const groups = {};
+      for (let i = hRow+1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[1]) continue;
+        const consegna   = String(row[0] || "").trim();
+        const cliente    = String(row[1] || "").trim();
+        const articolo   = String(row[2] || "").trim();
+        const descrizione = String(row[3] || "").trim();
+        const qty        = row[4] || "";
+        const ordine     = String(row[5] || "").trim();
+        const mostra     = String(row[6] || "").trim().toUpperCase();
+        if (!cliente || mostra === "NO") continue;
+
+        const key = `${cliente}__${consegna}`;
+        if (!groups[key]) {
+          groups[key] = {
+            id: key, cliente, consegna,
+            ordine, articles: [],
+            col: dateToCol(consegna)
+          };
+        }
+        if (articolo) groups[key].articles.push({cod:articolo, desc:descrizione, qty});
+      }
+
+      cards = Object.values(groups);
+
+      // Sort within each col by date
+      cards.sort((a,b) => {
+        const da = parseDate(a.consegna) || new Date(9999,0,1);
+        const db = parseDate(b.consegna) || new Date(9999,0,1);
+        return da - db;
+      });
+
+      // Restore done state
+      const saved = JSON.parse(localStorage.getItem("gmp_done_v2") || "[]");
+      cards.forEach(c => { if (saved.includes(c.id)) c.col = "done"; });
+
+      renderBoard();
+      showToast(`✓ ${cards.length} ordini caricati`);
+    } catch(err) {
+      showToast("⚠ Errore: " + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  input.value = "";
+}
+
+function renderBoard() {
+  const colDefs = [
+    {id:"arretrato", label:"🔴 Arretrato"},
+    {id:"oggi",      label:"⚠ Oggi / Domani"},
+    {id:"prossimi",  label:"📅 Prossimi"},
+    {id:"done",      label:"☑ Completati"},
+  ];
+
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+
+  const sb = document.getElementById("stats-bar");
+  sb.style.display = "flex";
+  colDefs.forEach(c => {
+    document.getElementById("n-"+c.id).textContent = cards.filter(k => k.col === c.id).length;
+  });
+
+  colDefs.forEach(({id, label}) => {
+    const colCards = cards.filter(c => c.col === id);
+    const col = document.createElement("div");
+    col.className = "col"; col.dataset.col = id;
+    col.innerHTML = `
+      <div class="col-header">
+        <span class="col-title">${label}</span>
+        <span class="col-count">${colCards.length}</span>
+      </div>
+      <div class="col-body" id="col-${id}"></div>
+    `;
+    board.appendChild(col);
+
+    const body = col.querySelector(".col-body");
+    setupDrop(body, id);
+    colCards.forEach(card => body.appendChild(makeCard(card)));
+  });
+}
+
+function makeCard(card) {
+  const el = document.createElement("div");
+  el.className = "card";
+  el.dataset.id = card.id;
+  el.dataset.col = card.col;
+  el.draggable = true;
+
+  const dateLabel = card.consegna.toLowerCase() === "arretrato"
+    ? "ARRETRATO"
+    : card.consegna;
+
+  const PREVIEW = 3;
+  const allArts = card.articles.map(a =>
+    `<div class="card-art"><strong>${a.qty}×  ${a.cod}</strong>${String(a.desc).substring(0,70)}${String(a.desc).length>70?"…":""}</div>`
+  );
+  const previewArts = allArts.slice(0, PREVIEW).join("");
+  const hiddenArts  = allArts.slice(PREVIEW).join("");
+  const hasMore = card.articles.length > PREVIEW;
+  const uid = card.id.replace(/[^a-z0-9]/gi,"_");
+
+  el.innerHTML = `
+    <div class="card-date">${dateLabel}</div>
+    <div class="card-cliente">${card.cliente}</div>
+    ${card.ordine ? `<div class="card-ordine">Ordine #${card.ordine}</div>` : ""}
+    <div class="card-articles">
+      ${previewArts}
+      ${hasMore ? `<div class="card-hidden" id="h_${uid}" style="display:none">${hiddenArts}</div>
+      <div class="card-more" id="m_${uid}" onclick="toggleArts('${uid}',event)">
+        ▼ altri ${card.articles.length - PREVIEW} articoli
+      </div>` : ""}
+    </div>
+  `;
+
+  el.addEventListener("dragstart", e => {
+    dragId = card.id;
+    setTimeout(() => el.classList.add("dragging"), 0);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  el.addEventListener("dragend", () => { el.classList.remove("dragging"); dragId = null; });
+  return el;
+}
+
+function setupDrop(el, colId) {
+  el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("drag-over"); });
+  el.addEventListener("dragleave", () => el.classList.remove("drag-over"));
+  el.addEventListener("drop", e => {
+    e.preventDefault(); el.classList.remove("drag-over");
+    if (dragId) moveCard(dragId, colId);
+  });
+}
+
+function moveCard(cardId, newCol) {
+  const card = cards.find(c => c.id === cardId);
+  if (!card || card.col === newCol) return;
+  card.col = newCol;
+  const done = cards.filter(c => c.col === "done").map(c => c.id);
+  localStorage.setItem("gmp_done_v2", JSON.stringify(done));
+  renderBoard();
+  const labels = {arretrato:"Arretrato",oggi:"Oggi/Domani",prossimi:"Prossimi",done:"Completato"};
+  showToast(`→ ${card.cliente} → ${labels[newCol]}`);
+}
+
+function toggleArts(uid, e) {
+  e.stopPropagation();
+  const hidden = document.getElementById("h_" + uid);
+  const btn    = document.getElementById("m_" + uid);
+  if (!hidden) return;
+  const open = hidden.style.display === "block";
+  hidden.style.display = open ? "none" : "block";
+  const count = hidden.querySelectorAll(".card-art").length;
+  btn.textContent = open ? `▼ altri ${count} articoli` : `▲ nascondi`;
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+</script>
+</body>
+</html>
